@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Regresa - Media Player Pro</title>
+    <style>
+        .bar-container {
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            gap: 4px;
+            height: 120px;
+        }
+        .bar {
+            width: 8px;
+            border-radius: 4px;
+            background: #6366f1;
+            transition: height 0.05s ease-out;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            background: #6366f1;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid #18181b;
+        }
+    </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-3xl bg-zinc-900 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.7)] border border-zinc-800 overflow-hidden">
+        
+        <div id="media-screen" class="relative bg-black aspect-video flex items-center justify-center overflow-hidden">
+            
+            <video id="main-media" src="./audio/regresa.mp3" class="w-full h-full object-contain hidden"></video>
+            
+            <div id="audio-visualizer-container" class="absolute inset-0 flex flex-col items-center justify-center gap-6 z-10 bg-gradient-to-t from-zinc-950 to-zinc-900">
+                <div id="visualizer-bars" class="bar-container w-full px-10">
+                    </div>
+                <div class="flex flex-col items-center gap-2">
+                    <span class="text-indigo-500 text-[10px] font-black tracking-[0.4em] uppercase">Now Playing</span>
+                    <h2 class="text-xl font-bold text-zinc-200">regresa.mp3</h2>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-8 space-y-6">
+            
+            <input type="range" id="progress-bar" value="0" class="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+            
+            <div class="flex flex-wrap items-center justify-between gap-6">
+                
+                <div class="flex items-center gap-6">
+                    <button id="btn-play" class="p-5 bg-indigo-600 hover:bg-indigo-500 rounded-2xl transition-all active:scale-90 shadow-lg shadow-indigo-900/40">
+                        <svg id="icon-play" class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                        <svg id="icon-pause" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                    </button>
+                    
+                    <div class="flex flex-col">
+                        <span class="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Time</span>
+                        <div class="text-sm font-mono text-zinc-300">
+                            <span id="current-time">00:00</span> / <span id="duration">00:00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-4">
+                    <a href="audio/regresa.mp3" download="regresa.mp3" class="p-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-indigo-400 rounded-xl border border-zinc-700 transition-all" title="Descargar">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path d="M4 16v4a2 2 0 002 2h12a2 2 0 002-2v-4M7 10l5 5m0 0l5-5m-5 5V3"></path>
+                        </svg>
+                    </a>
+                    
+                    <div class="flex items-center gap-3 bg-zinc-800/50 p-2 px-4 rounded-xl border border-zinc-800">
+                        <svg class="w-4 h-4 text-zinc-500" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+                        <input type="range" id="volume-slider" min="0" max="1" step="0.05" value="1" class="w-20 h-1 bg-zinc-700 appearance-none rounded-full accent-indigo-400">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const media = document.getElementById('main-media');
+        const btnPlay = document.getElementById('btn-play');
+        const iconPlay = document.getElementById('icon-play');
+        const iconPause = document.getElementById('icon-pause');
+        const progressBar = document.getElementById('progress-bar');
+        const volumeSlider = document.getElementById('volume-slider');
+        const currentTimeEl = document.getElementById('current-time');
+        const durationEl = document.getElementById('duration');
+        const visualizerContainer = document.getElementById('audio-visualizer-container');
+        const barsContainer = document.getElementById('visualizer-bars');
+
+        let audioContext, analyser, source, dataArray, animationId;
+        const numberOfBars = 32;
+        let barElements = [];
+
+        // Inicializar Barras
+        function initVisualizer() {
+            barsContainer.innerHTML = '';
+            for (let i = 0; i < numberOfBars; i++) {
+                const bar = document.createElement('div');
+                bar.className = 'bar';
+                bar.style.height = '4px';
+                barsContainer.appendChild(bar);
+                barElements.push(bar);
+            }
+        }
+        initVisualizer();
+
+        // Configurar Web Audio API
+        function setupAudio() {
+            if (audioContext) return;
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 128;
+            source = audioContext.createMediaElementSource(media);
+            source.connect(analyser);
+            analyser.connect(audioContext.destination);
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+        }
+
+        // Bucle de Animación
+        function render() {
+            if (media.paused) return;
+            animationId = requestAnimationFrame(render);
+            analyser.getByteFrequencyData(dataArray);
+
+            for (let i = 0; i < numberOfBars; i++) {
+                const value = dataArray[i];
+                const height = (value / 255) * 100 + 4;
+                barElements[i].style.height = `${height}%`;
+                barElements[i].style.opacity = 0.4 + (value / 255);
+            }
+        }
+
+        // Lógica de Reproducción
+        btnPlay.addEventListener('click', () => {
+            setupAudio(); // Necesario por políticas del navegador
+            
+            if (media.paused) {
+                media.play();
+                iconPlay.classList.add('hidden');
+                iconPause.classList.remove('hidden');
+                render();
+            } else {
+                media.pause();
+                iconPlay.classList.remove('hidden');
+                iconPause.classList.add('hidden');
+            }
+        });
+
+        // Actualizar UI
+        media.addEventListener('timeupdate', () => {
+            const p = (media.currentTime / media.duration) * 100;
+            progressBar.value = p || 0;
+            currentTimeEl.textContent = formatTime(media.currentTime);
+        });
+
+        media.addEventListener('loadedmetadata', () => {
+            durationEl.textContent = formatTime(media.duration);
+            // Si el archivo es video, mostramos el elemento y ocultamos visualizador
+            if (media.videoWidth > 0) {
+                media.classList.remove('hidden');
+                visualizerContainer.classList.add('hidden');
+            }
+        });
+
+        progressBar.addEventListener('input', () => {
+            media.currentTime = (progressBar.value * media.duration) / 100;
+        });
+
+        volumeSlider.addEventListener('input', (e) => {
+            media.volume = e.target.value;
+        });
+
+        function formatTime(s) {
+            const m = Math.floor(s / 60);
+            const sec = Math.floor(s % 60);
+            return `${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
+        }
+    </script>
+</body>
+</html>
